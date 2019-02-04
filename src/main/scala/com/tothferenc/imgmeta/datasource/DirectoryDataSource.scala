@@ -1,21 +1,26 @@
 package com.tothferenc.imgmeta.datasource
 
 import java.io.{File, FileFilter, FileInputStream}
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 
 import akka.NotUsed
 import akka.stream.scaladsl.Source
-import akka.stream.scaladsl.StreamConverters.fromJavaStream
 import com.tothferenc.imgmeta.model.{Album, Image, StreamIn}
 
-final case class DirectoryDataSource(path: Path) extends DataSource {
-  val dataSourceName = path.toString
+final case class DirectoryDataSource(root: Path) extends DataSource {
+  val dataSourceName = root.toString
 
-  private def getFilePaths(): Source[Path, NotUsed] = {
-    fromJavaStream(() => Files.walk(path))
+  private def getFilePaths(path: Path): Source[Path, NotUsed] = {
+    val (dirs, rest) = path.toFile.listFiles().partition(_.isDirectory)
+    val thisAlbum =
+      if (rest.nonEmpty)
+        Source.single(path).concat(Source.fromIterator(() => rest.iterator.map(_.toPath)))
+      else
+        Source.empty
+    dirs.foldLeft(thisAlbum)((s, f) => s concat Source.lazily(() => getFilePaths(f.toPath)))
   }
 
-  override def getImageFiles(): Source[StreamIn, NotUsed] = getFilePaths().mapConcat { filePath =>
+  override def getImageFiles(): Source[StreamIn, NotUsed] = getFilePaths(root).mapConcat { filePath =>
     if (filePath.toFile.isDirectory) {
 
       val filesInDir = filePath.toFile.listFiles(new FileFilter {
@@ -27,12 +32,12 @@ final case class DirectoryDataSource(path: Path) extends DataSource {
       else
         List(StreamIn.AlbumAnnouncement(Album(
           dataSourceName,
-          path.relativize(filePath).toString,
+          root.relativize(filePath).toString,
           Some(filesInDir))))
     }
     else List(StreamIn.Elem(Image(
       dataSourceName,
-      path.relativize(filePath.getParent).toString,
+      root.relativize(filePath.getParent).toString,
       filePath.getFileName.toString,
       () => new FileInputStream(filePath.toFile))))
   }
