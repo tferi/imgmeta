@@ -7,7 +7,7 @@ import com.tothferenc.imgmeta.WellKnownTags.focalLength
 import com.tothferenc.imgmeta.datasource.DirectoryDataSource
 import com.tothferenc.imgmeta.extraction.{AsyncImageProcessor, AsyncMetaExtractor}
 import com.tothferenc.imgmeta.model.StreamIn
-import com.tothferenc.imgmeta.reporting.CsvReporter
+import com.tothferenc.imgmeta.reporting.{CsvReporter, PrintStreamReporter}
 import org.scalatest.AsyncWordSpec
 
 class ReactivePipelineSpec extends AsyncWordSpec with AkkaBeforeAndAfterAll {
@@ -18,13 +18,13 @@ class ReactivePipelineSpec extends AsyncWordSpec with AkkaBeforeAndAfterAll {
   val ds2 = testResources.resolve("ds2")
 
   val dataSources = List(ds1, ds2).map { p =>
-    AkkaDataSource(DirectoryDataSource(p)).collect { case StreamIn.Elem(img) => img }
+    DirectoryDataSource(p).getImageFiles()
   }
 
   val out1 = Files.createTempFile(this.getClass.getSimpleName, System.currentTimeMillis().toString)
-  val out2 = Files.createTempFile(this.getClass.getSimpleName, System.currentTimeMillis().toString)
+  val consoleReporter = PrintStreamReporter(System.out, 10)
 
-  val reporters = List(out1, out2).map(new CsvReporter(_, List(focalLength)).getSink)
+  val reporters = consoleReporter :: List(out1).map(new CsvReporter(_, List(focalLength)).getSink)
 
   val proc = new AsyncImageProcessor(new AsyncMetaExtractor())
 
@@ -34,8 +34,6 @@ class ReactivePipelineSpec extends AsyncWordSpec with AkkaBeforeAndAfterAll {
 
       for {
         f <- handle.allReportersComplete
-        _ <- FileIO.fromPath(out1).map(_.utf8String).runWith(Sink.foreach(println))
-        _ <- FileIO.fromPath(out2).map(_.utf8String).runWith(Sink.foreach(println))
       } yield {
         succeed
       }

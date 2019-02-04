@@ -6,7 +6,7 @@ import akka.Done
 import akka.stream.alpakka.csv.scaladsl.CsvFormatting
 import akka.stream.scaladsl.{FileIO, Flow, Keep, Sink, Source}
 import akka.util.ByteString
-import com.tothferenc.imgmeta.model.ProcessedImage
+import com.tothferenc.imgmeta.model.{ProcessedImage, StreamOut}
 import com.tothferenc.imgmeta.util.DirectEC
 
 import scala.collection.JavaConverters.iterableAsScalaIterable
@@ -18,10 +18,10 @@ class CsvReporter(outputFilePath: Path, tags: List[Int]) {
 
   private def header: List[String] = "dataSource" :: "album" :: "name" :: tags.map(i => s"tag_${i.toHexString}")
 
-  def getSink: Sink[ProcessedImage, Future[Done]] = toStringValues.via(CsvFormatting.format[List[String]]()).toMat(byteSink)(Keep.right)
+  def getSink: Sink[StreamOut, Future[Done]] = toStringValues.via(CsvFormatting.format[List[String]]()).toMat(byteSink)(Keep.right)
 
-  private def toStringValues = Flow[ProcessedImage].collect {
-    case ProcessedImage(ds, a, n, Success(meta)) =>
+  private def toStringValues = Flow[StreamOut].collect {
+    case StreamOut.Elem(ProcessedImage(ds, a, n, Success(meta))) =>
       val found = new mutable.TreeMap[Integer, String]
       iterableAsScalaIterable(meta.getDirectories).foreach { dir =>
         tags.foreach { i =>
