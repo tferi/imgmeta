@@ -1,6 +1,6 @@
 package com.tothferenc.imgmeta.reporting
 
-import java.nio.file.Path
+import java.nio.file.{OpenOption, Path}
 
 import akka.Done
 import akka.stream.alpakka.csv.scaladsl.CsvFormatting
@@ -13,8 +13,10 @@ import scala.collection.JavaConverters.iterableAsScalaIterable
 import scala.collection.{breakOut, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
+import java.nio.file.StandardOpenOption._
 
 class CsvReporter(outputFilePath: Path, tags: List[Int]) {
+
 
   private def header: List[String] = "dataSource" :: "album" :: "name" :: tags.map(i => s"tag_${i.toHexString}")
 
@@ -32,8 +34,10 @@ class CsvReporter(outputFilePath: Path, tags: List[Int]) {
       ds :: a :: n :: tagValues
   }.prepend(Source.single(header))
 
-  private def byteSink: Sink[ByteString, Future[Done]] = FileIO.toPath(outputFilePath).mapMaterializedValue(_.transform {
-    case Success(res) => res.status
-    case Failure(t) => Failure(t)
-  }(DirectEC))
+  private def byteSink: Sink[ByteString, Future[Done]] =
+    FileIO.toPath(outputFilePath, Set(CREATE, TRUNCATE_EXISTING, WRITE))
+      .mapMaterializedValue(_.transform {
+        case Success(res) => res.status
+        case Failure(t) => Failure(t)
+      }(DirectEC))
 }
