@@ -8,7 +8,7 @@ import com.tothferenc.imgmeta.akkastream.ReactivePipeline
 import com.tothferenc.imgmeta.cli.Config
 import com.tothferenc.imgmeta.datasource.DirectoryDataSource
 import com.tothferenc.imgmeta.extraction.{AsyncImageProcessor, AsyncMetaExtractor}
-import com.tothferenc.imgmeta.reporting.CsvReporter
+import com.tothferenc.imgmeta.reporting.{CsvReporter, PrintStreamReporter}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor}
@@ -40,7 +40,7 @@ object Application {
         logger.info("Running with config {}", c)
         implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(executor)
         val dataSources = c.dataSources.map(DirectoryDataSource(_).getImageFiles())
-        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).getSink)
+        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).getSink) :+ PrintStreamReporter(System.out, 50)
         val imageProcessor = new AsyncImageProcessor(new AsyncMetaExtractor())
         ReactivePipeline.run(
           dataSources,
