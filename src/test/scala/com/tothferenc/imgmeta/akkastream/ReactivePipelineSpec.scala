@@ -18,7 +18,7 @@ class ReactivePipelineSpec extends AsyncWordSpec with AkkaBeforeAndAfterAll with
 
   val dataSources = List(ds1, ds2).map { p =>
     DirectoryDataSource(p).getImageFiles()
-  }
+  }.reduce(_ concat _)
 
   val out1 = Files.createTempFile(this.getClass.getSimpleName, System.currentTimeMillis().toString)
   val out2 = Files.createTempFile(this.getClass.getSimpleName, System.currentTimeMillis().toString)

@@ -4,6 +4,7 @@ import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.Source
 import com.tothferenc.imgmeta.akkastream.ReactivePipeline
 import com.tothferenc.imgmeta.cli.Config
 import com.tothferenc.imgmeta.datasource.DirectoryDataSource
@@ -23,13 +24,6 @@ object Application {
   private implicit lazy val mat = ActorMaterializer()
 
 
-  private val processors: Int = Runtime.getRuntime.availableProcessors()
-  private lazy val executor = Executors.newFixedThreadPool(processors, (r: Runnable) => {
-    val t = new Thread(r)
-    t.setDaemon(true)
-    t
-  })
-
   def main(args: Array[String]): Unit = {
     Config.parse(args).fold {
       illegalArg("Couldn't parse args")
@@ -38,15 +32,21 @@ object Application {
       if (c.dataSources.isEmpty) illegalArg("At least 1 input must be specified")
       try {
         logger.info("Running with config {}", c)
+        val executor = Executors.newFixedThreadPool(c.parallelism, (r: Runnable) => {
+          val t = new Thread(r)
+          t.setDaemon(true)
+          t
+        })
         implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(executor)
-        val dataSources = c.dataSources.map(DirectoryDataSource(_).getImageFiles())
+        val dataSources = (if (c.cycle) Source.cycle(() => c.dataSources.iterator) else Source(c.dataSources))
+          .flatMapConcat(DirectoryDataSource(_).getImageFiles())
         val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).writerFlow)
         val imageProcessor = new AsyncImageProcessor(new AsyncMetaExtractor())
         ReactivePipeline.run(
           dataSources,
           outputs,
           imageProcessor,
-          processors,
+          c.parallelism,
           PrintStreamReporter(System.out, 50)).doneF.onComplete {
           case Success(s) => terminate()
           case Failure(t) => fail(t)

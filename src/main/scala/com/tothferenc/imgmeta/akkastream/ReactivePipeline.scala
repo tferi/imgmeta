@@ -10,7 +10,7 @@ import com.tothferenc.imgmeta.util.DirectEC
 import scala.collection.immutable.Iterable
 import scala.concurrent.Future
 
-final case class PipelineHandle(killSwitch: KillSwitch, doneF: Future[Done])
+final case class PipelineHandle( doneF: Future[Done])
 
 object ReactivePipeline {
 
@@ -24,23 +24,24 @@ object ReactivePipeline {
   }
 
 
-  def run(dataSources: Iterable[Source[StreamIn, NotUsed]],
+  def run(dataSource: Source[StreamIn, NotUsed],
           reporters: Iterable[Flow[StreamOut, StreamOut, Future[Done]]],
           imageProcessor: AsyncImageProcessor,
           processorParallelism: Int,
           printStreamReporter: Flow[StreamOut, StreamOut, Future[Done]])(implicit m: Materializer) = {
-    val combinedSource = dataSources.reduceOption(_ concat _).getOrElse(Source.empty).async
+    val graph = assemblePipeline(dataSource, reporters, imageProcessor, processorParallelism, printStreamReporter)
+    PipelineHandle( RunnableGraph.fromGraph(graph).run())
+
+  }
+
+  private def assemblePipeline(dataSource: Source[StreamIn, NotUsed], reporters: Iterable[Flow[StreamOut, StreamOut, Future[Done]]], imageProcessor: AsyncImageProcessor, processorParallelism: Int, printStreamReporter: Flow[StreamOut, StreamOut, Future[Done]]) = {
     val reporterFlow = reporters.reduceOption(_ via _.async).getOrElse(Flow[StreamOut])
 
-    val graph = combinedSource
+    val graph = dataSource.async
       .mapAsync[StreamOut](processorParallelism)(in => process(imageProcessor, in))
-      .viaMat(KillSwitches.single)(Keep.right)
       .via(reporterFlow)
       .via(printStreamReporter)
-      .toMat(Sink.ignore)(Keep.both)
-
-    val (killswitch, doneF) = RunnableGraph.fromGraph(graph).run()
-    PipelineHandle(killswitch, doneF)
-
+      .toMat(Sink.ignore)(Keep.right)
+    graph
   }
 }

@@ -1,13 +1,16 @@
 package com.tothferenc.imgmeta.datasource
 
-import java.io.{File, FileFilter, FileInputStream}
+import java.io.{BufferedInputStream, File, FileFilter, FileInputStream}
 import java.nio.file.Path
 
 import akka.NotUsed
-import akka.stream.scaladsl.Source
+import akka.stream.Materializer
+import akka.stream.scaladsl.{FileIO, Source, StreamConverters}
 import com.tothferenc.imgmeta.model.{Album, Image, StreamIn}
 
-final case class DirectoryDataSource(root: Path) extends DataSource {
+import scala.concurrent.duration._
+
+final case class DirectoryDataSource(root: Path)(implicit m: Materializer) extends DataSource {
   private val dataSourceName = root.toString
 
   private def getFilePaths(path: Path): Source[Path, NotUsed] = {
@@ -39,6 +42,6 @@ final case class DirectoryDataSource(root: Path) extends DataSource {
       dataSourceName,
       root.relativize(filePath.getParent).toString,
       filePath.getFileName.toString,
-      () => new FileInputStream(filePath.toFile))))
+      () => new BufferedInputStream(new FileInputStream(filePath.toFile), 8192 * 128 ))))
   }
 }
