@@ -40,13 +40,14 @@ object Application {
         logger.info("Running with config {}", c)
         implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(executor)
         val dataSources = c.dataSources.map(DirectoryDataSource(_).getImageFiles())
-        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).writerFlow) :+ PrintStreamReporter(System.out, 50)
+        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).writerFlow)
         val imageProcessor = new AsyncImageProcessor(new AsyncMetaExtractor())
         ReactivePipeline.run(
           dataSources,
           outputs,
           imageProcessor,
-          processors).doneF.onComplete {
+          processors,
+          PrintStreamReporter(System.out, 50)).doneF.onComplete {
           case Success(s) => terminate()
           case Failure(t) => fail(t)
         }
