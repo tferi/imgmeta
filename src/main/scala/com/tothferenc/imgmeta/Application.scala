@@ -1,6 +1,6 @@
 package com.tothferenc.imgmeta
 
-import java.util.concurrent.{Executors, ThreadFactory}
+import java.util.concurrent.Executors
 
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
@@ -11,8 +11,8 @@ import com.tothferenc.imgmeta.extraction.{AsyncImageProcessor, AsyncMetaExtracto
 import com.tothferenc.imgmeta.reporting.{CsvReporter, PrintStreamReporter}
 import org.slf4j.LoggerFactory
 
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success}
 
 object Application {
@@ -40,16 +40,16 @@ object Application {
         logger.info("Running with config {}", c)
         implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(executor)
         val dataSources = c.dataSources.map(DirectoryDataSource(_).getImageFiles())
-        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).getSink) :+ PrintStreamReporter(System.out, 50)
+        val outputs = c.outputs.map(new CsvReporter(_, List(WellKnownTags.focalLength)).writerFlow) :+ PrintStreamReporter(System.out, 50)
         val imageProcessor = new AsyncImageProcessor(new AsyncMetaExtractor())
         ReactivePipeline.run(
           dataSources,
           outputs,
           imageProcessor,
-          processors).allReportersComplete.onComplete {
-            case Success(s) => terminate()
-            case Failure(t) => fail(t)
-          }
+          processors).doneF.onComplete {
+          case Success(s) => terminate()
+          case Failure(t) => fail(t)
+        }
       } finally {
         sys.addShutdownHook {
           terminate()

@@ -1,22 +1,17 @@
 package com.tothferenc.imgmeta.akkastream
 
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Keep, RunnableGraph, Sink, Source}
 import akka.stream._
+import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
 import akka.{Done, NotUsed}
+import com.tothferenc.imgmeta.Slf4jLog
 import com.tothferenc.imgmeta.extraction.AsyncImageProcessor
-import com.tothferenc.imgmeta.model.{Image, ProcessedImage, StreamIn, StreamOut}
+import com.tothferenc.imgmeta.model.{StreamIn, StreamOut}
 import com.tothferenc.imgmeta.util.DirectEC
 
 import scala.collection.immutable.Iterable
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
-class PipelineHandle(val killSwitch: KillSwitch, val reporterFutures: Seq[Future[Done]]) {
-
-  val allReportersComplete: Future[Seq[Done]] = {
-    implicit val directEC: ExecutionContext = DirectEC
-    Future.sequence(reporterFutures)
-  }
-}
+final case class PipelineHandle(killSwitch: KillSwitch, doneF: Future[Done])
 
 object ReactivePipeline {
 
@@ -31,30 +26,22 @@ object ReactivePipeline {
 
 
   def run(dataSources: Iterable[Source[StreamIn, NotUsed]],
-          reporters: Seq[Sink[StreamOut, Future[Done]]],
+          reporters: Iterable[Flow[StreamOut, StreamOut, Future[Done]]],
           imageProcessor: AsyncImageProcessor,
           processorParallelism: Int)(implicit m: Materializer) = {
     val combinedSource = dataSources.reduceOption(_ concat _).getOrElse(Source.empty)
-    val (futures, sinks) = reporters.map(_.preMaterialize()).unzip
+    val reporterFlow = reporters.reduceOption(_ via _).getOrElse(Flow[StreamOut])
 
-    val src = combinedSource
-      .mapAsync[StreamOut](processorParallelism)(in => process(imageProcessor, in)).viaMat(KillSwitches.single)(Keep.right)
+    val graph = combinedSource
+      .mapAsync[StreamOut](processorParallelism)(in => process(imageProcessor, in))
+      .via(Slf4jLog("source"))
+      .viaMat(KillSwitches.single)(Keep.right)
+      .via(Slf4jLog("killswitch"))
+      .via(reporterFlow)
+      .toMat(Sink.ignore)(Keep.both)
 
-    val graph = GraphDSL.create(
-      src) { implicit b =>
-      resultSource =>
-        import GraphDSL.Implicits._
-
-        val broadcast = b.add(Broadcast[StreamOut](reporters.size))
-
-        resultSource ~> broadcast
-        sinks.foreach(broadcast ~> _)
-
-        ClosedShape
-    }
-
-    val killswitch = RunnableGraph.fromGraph(graph).run()
-    new PipelineHandle(killswitch, futures)
+    val (killswitch, doneF) = RunnableGraph.fromGraph(graph).run()
+    PipelineHandle(killswitch, doneF)
 
   }
 }

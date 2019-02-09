@@ -8,7 +8,7 @@ import akka.stream.scaladsl.Source
 import com.tothferenc.imgmeta.model.{Album, Image, StreamIn}
 
 final case class DirectoryDataSource(root: Path) extends DataSource {
-  val dataSourceName = root.toString
+  private val dataSourceName = root.toString
 
   private def getFilePaths(path: Path): Source[Path, NotUsed] = {
     val (dirs, rest) = path.toFile.listFiles().partition(_.isDirectory)
