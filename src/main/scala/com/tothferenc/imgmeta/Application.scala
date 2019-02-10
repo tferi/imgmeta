@@ -28,8 +28,7 @@ object Application {
     Config.parse(args).fold {
       illegalArg("Couldn't parse args")
     } { c =>
-      if (c.outputs.isEmpty) illegalArg("At least 1 output must be specified")
-      if (c.dataSources.isEmpty) illegalArg("At least 1 input must be specified")
+      validateConfig(c)
       try {
         logger.info("Running with config {}", c)
         val executor = Executors.newFixedThreadPool(c.parallelism, (r: Runnable) => {
@@ -57,6 +56,15 @@ object Application {
         }
       }
     }
+  }
+
+  private def validateConfig(c: Config): Unit = {
+    if (c.outputs.isEmpty) illegalArg("At least 1 output must be specified")
+    if (c.dataSources.isEmpty) illegalArg("At least 1 input must be specified")
+    c.dataSources.find(p => !p.toFile.exists())
+      .foreach(p => illegalArg(s"Path does not exist: $p"))
+    c.outputs.find(p => !p.getParent.toFile.exists())
+      .foreach(p => illegalArg(s"Can't create output at $p as parent folder does not exist."))
   }
 
   private def terminate() = {
